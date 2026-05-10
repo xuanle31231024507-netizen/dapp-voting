@@ -3394,6 +3394,391 @@ if (ethereumForEvents && !ethereumForEvents.__voteChainHotfixEvents) {
   });
 }
 </script>
+<!-- ETHERS -->
+<script src="https://cdn.jsdelivr.net/npm/ethers@6.13.1/dist/ethers.umd.min.js"></script>
 
+<script>
+
+// =========================
+// CONFIG
+// =========================
+
+const CONTRACT_ADDRESS = "0xC8D78E7b709B0E125Bcf99E0e3Ec13454FCe1A7b";
+
+const ABI = [
+{
+  "inputs": [],
+  "stateMutability": "nonpayable",
+  "type": "constructor"
+},
+{
+  "anonymous": false,
+  "inputs": [
+    {
+      "indexed": true,
+      "internalType": "uint256",
+      "name": "_candidateId",
+      "type": "uint256"
+    }
+  ],
+  "name": "votedEvent",
+  "type": "event"
+},
+{
+  "inputs": [
+    {
+      "internalType": "uint256",
+      "name": "_candidateId",
+      "type": "uint256"
+    }
+  ],
+  "name": "vote",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+},
+{
+  "inputs": [],
+  "name": "candidatesCount",
+  "outputs": [
+    {
+      "internalType": "uint256",
+      "name": "",
+      "type": "uint256"
+    }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+},
+{
+  "inputs": [
+    {
+      "internalType": "uint256",
+      "name": "",
+      "type": "uint256"
+    }
+  ],
+  "name": "candidates",
+  "outputs": [
+    {
+      "internalType": "uint256",
+      "name": "id",
+      "type": "uint256"
+    },
+    {
+      "internalType": "string",
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "internalType": "string",
+      "name": "bio",
+      "type": "string"
+    },
+    {
+      "internalType": "uint256",
+      "name": "voteCount",
+      "type": "uint256"
+    }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+},
+{
+  "inputs": [
+    {
+      "internalType": "address",
+      "name": "",
+      "type": "address"
+    }
+  ],
+  "name": "hasVoted",
+  "outputs": [
+    {
+      "internalType": "bool",
+      "name": "",
+      "type": "bool"
+    }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+},
+{
+  "inputs": [],
+  "name": "getVotingStatus",
+  "outputs": [
+    {
+      "internalType": "string",
+      "name": "",
+      "type": "string"
+    }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+}
+];
+
+
+// =========================
+// GLOBAL
+// =========================
+
+let provider;
+let signer;
+let contract;
+let currentAccount;
+
+
+// =========================
+// CONNECT WALLET
+// =========================
+
+async function loginWithMetaMask() {
+
+    try {
+
+        if (!window.ethereum) {
+            alert("Please install MetaMask");
+            return;
+        }
+
+        // request wallet
+        await window.ethereum.request({
+            method: "eth_requestAccounts"
+        });
+
+        provider = new ethers.BrowserProvider(window.ethereum);
+
+        signer = await provider.getSigner();
+
+        currentAccount = await signer.getAddress();
+
+        contract = new ethers.Contract(
+            CONTRACT_ADDRESS,
+            ABI,
+            signer
+        );
+
+        // wallet UI
+        document.getElementById("wallet-label").innerText =
+            currentAccount.slice(0,6) +
+            "..." +
+            currentAccount.slice(-4);
+
+        document
+            .getElementById("wallet-badge")
+            .classList.add("connected");
+
+        // network check
+        const network = await provider.getNetwork();
+
+        if (network.chainId !== 11155111n) {
+
+            document
+                .getElementById("network-banner")
+                .classList.add("show");
+
+            alert("Please switch to Sepolia");
+
+            return;
+        }
+
+        // hide auth
+        document.getElementById("auth-layer").style.display = "none";
+
+        // show app
+        document.getElementById("app-layer").style.display = "block";
+
+        // load data
+        await loadCandidates();
+
+        console.log("Connected:", currentAccount);
+
+    } catch (err) {
+
+        console.error(err);
+
+        alert(err.message);
+    }
+}
+
+
+// =========================
+// SWITCH NETWORK
+// =========================
+
+async function switchNetwork() {
+
+    try {
+
+        await window.ethereum.request({
+            method: "wallet_switchEthereumChain",
+            params: [{ chainId: "0xaa36a7" }]
+        });
+
+    } catch (err) {
+
+        console.error(err);
+
+        alert("Cannot switch network");
+    }
+}
+
+
+// =========================
+// LOAD CANDIDATES
+// =========================
+
+async function loadCandidates() {
+
+    try {
+
+        const total = await contract.candidatesCount();
+
+        const container =
+            document.getElementById("leaderboard-list");
+
+        container.innerHTML = "";
+
+        let totalVotes = 0;
+
+        for (let i = 1; i <= total; i++) {
+
+            const c = await contract.candidates(i);
+
+            totalVotes += Number(c.voteCount);
+
+            const html = `
+                <div class="leader-row">
+
+                    <div class="leader-rank rank-gold">
+                        #${c.id}
+                    </div>
+
+                    <div class="leader-info">
+                        <div class="leader-name">
+                            ${c.name}
+                        </div>
+
+                        <div class="leader-party">
+                            ${c.bio}
+                        </div>
+                    </div>
+
+                    <div class="leader-votes">
+                        <div class="leader-votes-num">
+                            ${c.voteCount}
+                        </div>
+
+                        <button
+                            class="btn btn-primary btn-sm"
+                            onclick="vote(${c.id})"
+                        >
+                            Vote
+                        </button>
+                    </div>
+
+                </div>
+            `;
+
+            container.innerHTML += html;
+        }
+
+        // dashboard
+        document.getElementById("ds-total").innerText =
+            totalVotes;
+
+        document.getElementById("ds-cands").innerText =
+            total;
+
+    } catch (err) {
+
+        console.error(err);
+    }
+}
+
+
+// =========================
+// VOTE
+// =========================
+
+async function vote(candidateId) {
+
+    try {
+
+        // already voted?
+        const voted = await contract.hasVoted(currentAccount);
+
+        if (voted) {
+
+            alert("You already voted");
+
+            return;
+        }
+
+        // voting status
+        const status = await contract.getVotingStatus();
+
+        console.log(status);
+
+        // send tx
+        const tx = await contract.vote(candidateId);
+
+        alert("Transaction submitted!");
+
+        await tx.wait();
+
+        alert("Vote success!");
+
+        await loadCandidates();
+
+    } catch (err) {
+
+        console.error(err);
+
+        if (err.reason) {
+            alert(err.reason);
+        } else {
+            alert(err.message);
+        }
+    }
+}
+
+
+// =========================
+// AUTO RELOAD
+// =========================
+
+if (window.ethereum) {
+
+    window.ethereum.on("accountsChanged", () => {
+        location.reload();
+    });
+
+    window.ethereum.on("chainChanged", () => {
+        location.reload();
+    });
+}
+
+
+// =========================
+// AUTO LOAD IF CONNECTED
+// =========================
+
+window.addEventListener("load", async () => {
+
+    if (!window.ethereum) return;
+
+    const accounts = await window.ethereum.request({
+        method: "eth_accounts"
+    });
+
+    if (accounts.length > 0) {
+
+        loginWithMetaMask();
+    }
+});
+
+</script>
 </body>
 </html>
